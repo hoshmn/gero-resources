@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resource Map</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f7f4ef;
+    --panel: #ffffff;
+    --accent: #2d6a4f;
+    --accent2: #52b788;
+    --text: #1a1a1a;
+    --muted: #7a7a72;
+    --border: #e0dbd2;
+    --shadow: 0 2px 16px rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px; background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow); z-index: 1000; gap: 16px;
+  }
+  .header-left { display: flex; align-items: center; gap: 14px; }
+  .logo { font-family: 'DM Serif Display', serif; font-size: 1.4rem; color: var(--accent); letter-spacing: -0.02em; }
+  .status { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  .status.loading { color: var(--accent2); }
+  .status.error { color: #c0392b; }
+
+  .controls { display: flex; gap: 10px; align-items: center; }
+  input[type="text"] {
+    border: 1.5px solid var(--border); border-radius: 8px; padding: 7px 13px;
+    font-family: inherit; font-size: 0.85rem; background: var(--bg); color: var(--text);
+    width: 220px; outline: none; transition: border-color 0.2s;
+  }
+  input[type="text"]:focus { border-color: var(--accent2); }
+  .btn-refresh {
+    background: var(--accent); color: white; border: none; border-radius: 8px;
+    padding: 7px 14px; font-family: inherit; font-size: 0.85rem; cursor: pointer;
+    font-weight: 500; transition: background 0.2s;
+  }
+  .btn-refresh:hover { background: var(--accent2); }
+
+  .progress-bar {
+    height: 3px; background: var(--border); position: relative; overflow: hidden;
+    transition: opacity 0.3s;
+  }
+  .progress-bar.hidden { opacity: 0; }
+  .progress-fill {
+    height: 100%; background: var(--accent2);
+    transition: width 0.3s ease; width: 0%;
+  }
+
+  #map { flex: 1; }
+
+  /* Leaflet popup custom styles */
+  .leaflet-popup-content-wrapper {
+    border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.13); padding: 0; overflow: hidden;
+  }
+  .leaflet-popup-content { margin: 0; min-width: 220px; max-width: 300px; }
+  .popup-inner { padding: 16px 18px; }
+  .popup-name { font-family: 'DM Serif Display', serif; font-size: 1.05rem; color: var(--accent); margin-bottom: 6px; }
+  .popup-loc { font-size: 0.78rem; color: var(--muted); margin-bottom: 8px; }
+  .popup-desc { font-size: 0.82rem; line-height: 1.5; color: #444; margin-bottom: 10px; }
+  .popup-contact { font-size: 0.8rem; display: flex; flex-direction: column; gap: 3px; }
+  .popup-contact a { color: var(--accent); text-decoration: none; }
+  .popup-contact a:hover { text-decoration: underline; }
+  .popup-fallback-note { font-size: 0.72rem; color: var(--muted); font-style: italic; margin-top: 6px; }
+
+  .popup-cluster { padding: 14px 16px; }
+  .popup-cluster-title { font-family: 'DM Serif Display', serif; font-size: 1rem; color: var(--accent); margin-bottom: 10px; }
+  .popup-cluster-item { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+  .popup-cluster-item:last-child { border-bottom: none; }
+  .popup-cluster-item strong { display: block; color: var(--text); }
+
+  /* Marker styles */
+  .marker-precise { background: var(--accent); }
+  .marker-fallback { background: #b08a4e; }
+
+  .legend {
+    position: absolute; bottom: 28px; left: 14px; z-index: 900;
+    background: var(--panel); border-radius: 10px; padding: 10px 14px;
+    box-shadow: var(--shadow); font-size: 0.78rem; display: flex; flex-direction: column; gap: 6px;
+    border: 1px solid var(--border);
+  }
+  .legend-title { font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.68rem; }
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .dot-precise { background: var(--accent); }
+  .dot-fallback { background: #b08a4e; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <span class="logo">Resource Map</span>
+    <span class="status" id="status">Loading…</span>
+  </div>
+  <div class="controls">
+    <input type="text" id="search" placeholder="Search resources…">
+    <button class="btn-refresh" onclick="loadData()">↺ Refresh</button>
+  </div>
+</header>
+
+<div class="progress-bar" id="progress-bar">
+  <div class="progress-fill" id="progress-fill"></div>
+</div>
+
+<div id="map"></div>
+
+<div class="legend">
+  <div class="legend-title">Marker type</div>
+  <div class="legend-item"><div class="legend-dot dot-precise"></div> Geocoded location</div>
+  <div class="legend-item"><div class="legend-dot dot-fallback"></div> City/county fallback</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ── CONFIGURATION ──────────────────────────────────────────────────────────────
+// Paste your Google Apps Script Web App URL here after deploying:
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwpo2JWleSpPlyn1pFJq2hcM8NeSPy7ya7fYsYsAzIaLvgh8tsDFQF9xVlURXonjhGTMA/exec';
+// ──────────────────────────────────────────────────────────────────────────────
+
+const map = L.map('map').setView([38.5, -96], 4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19
+}).addTo(map);
+
+let allMarkers = [];
+let markerLayer = L.layerGroup().addTo(map);
+
+function makeIcon(type) {
+  const color = type === 'precise' ? '#2d6a4f' : '#b08a4e';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32">
+    <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 20 12 20S24 21 24 12C24 5.4 18.6 0 12 0z" fill="${color}"/>
+    <circle cx="12" cy="12" r="5" fill="white"/>
+  </svg>`;
+  return L.divIcon({
+    html: svg, className: '', iconSize: [24,32], iconAnchor: [12,32], popupAnchor: [0,-34]
+  });
+}
+
+
+
+// ── POPUP HTML ─────────────────────────────────────────────────────────────────
+function popupHTML(row, isFallback) {
+  const loc = [row.city, row.county ? row.county+' County' : '', row.state].filter(Boolean).join(', ');
+  return `<div class="popup-inner">
+    <div class="popup-name">${row.name || ''}</div>
+    ${loc ? `<div class="popup-loc">📍 ${loc}</div>` : ''}
+    ${row.description ? `<div class="popup-desc">${row.description}</div>` : ''}
+    <div class="popup-contact">
+      ${row.phone ? `<span>📞 <a href="tel:${row.phone}">${row.phone}</a></span>` : ''}
+      ${row.email ? `<span>✉️ <a href="mailto:${row.email}">${row.email}</a></span>` : ''}
+      ${row.address ? `<span>🏠 ${row.address}</span>` : ''}
+    </div>
+    ${isFallback ? `<div class="popup-fallback-note">⚠ Approximate location (city-level)</div>` : ''}
+  </div>`;
+}
+
+// ── SEARCH FILTER ─────────────────────────────────────────────────────────────
+document.getElementById('search').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  allMarkers.forEach(({ marker, row }) => {
+    const text = Object.values(row).join(' ').toLowerCase();
+    if (text.includes(q)) {
+      if (!markerLayer.hasLayer(marker)) markerLayer.addLayer(marker);
+    } else {
+      markerLayer.removeLayer(marker);
+    }
+  });
+});
+
+// ── MAIN LOAD ──────────────────────────────────────────────────────────────────
+function setStatus(msg, cls) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status ' + (cls || '');
+}
+
+function setProgress(pct) {
+  const bar = document.getElementById('progress-bar');
+  const fill = document.getElementById('progress-fill');
+  if (pct >= 100) {
+    fill.style.width = '100%';
+    setTimeout(() => bar.classList.add('hidden'), 400);
+  } else {
+    bar.classList.remove('hidden');
+    fill.style.width = pct + '%';
+  }
+}
+
+async function fetchSheetRows() {
+  const url = `https://docs.google.com/spreadsheets/d/15miVS0_jky4Q4kpnGl5By9s1T-Tv0guQVxSx5YGx9_s/gviz/tq?tqx=out:json&gid=0`;
+  const res = await fetch(url);
+  const text = await res.text();
+  const json = JSON.parse(text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/)[1]);
+  const cols = json.table.cols.map(c => c.label.toLowerCase().trim());
+  return json.table.rows.map(r => {
+    const obj = {};
+    cols.forEach((col, i) => { obj[col] = r.c[i] && r.c[i].v != null ? String(r.c[i].v).trim() : ''; });
+    return obj;
+  }).filter(r => r.name);
+}
+
+// ── SHEET LOADING (via Apps Script proxy — solves CORS) ───────────────────────
+// async function fetchSheetRows() {
+//   if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL === 'YOUR_APPS_SCRIPT_URL') {
+//     throw new Error('Please set APPS_SCRIPT_URL at the top of the script. See instructions.');
+//   }
+//   const res = await fetch(APPS_SCRIPT_URL);
+//   if (!res.ok) throw new Error('HTTP ' + res.status);
+//   const data = await res.json();
+//   return data.filter(r => r.name);
+// }
+
+// ── PLACE MARKER ───────────────────────────────────────────────────────────────
+function placeMarker(row, coords) {
+  const marker = L.marker([coords.lat, coords.lng], { icon: makeIcon(coords.type) });
+  marker.bindPopup(popupHTML(row, coords.type === 'fallback'), { maxWidth: 320 });
+  markerLayer.addLayer(marker);
+  allMarkers.push({ marker, row });
+}
+
+// ── MAIN LOAD ──────────────────────────────────────────────────────────────────
+async function loadData() {
+  markerLayer.clearLayers();
+  allMarkers = [];
+  setProgress(2);
+  setStatus('Fetching sheet…', 'loading');
+
+  let rows;
+  try {
+    rows = await fetchSheetRows();
+  } catch(e) {
+    setStatus(`Error: ${e.message}`, 'error');
+    setProgress(100);
+    return;
+  }
+
+  setProgress(60);
+  let placed = 0, missing = 0;
+
+  for (const row of rows) {
+    const lat = parseFloat(row.lat_c);
+    const lng = parseFloat(row.lng_c);
+    const geoType = (row.geo_type_c || '').trim();
+
+    if (!isNaN(lat) && !isNaN(lng) && geoType !== 'NOT_FOUND') {
+      const type = geoType === 'precise' ? 'precise' : 'fallback';
+      placeMarker(row, { lat, lng, type });
+      placed++;
+    } else {
+      missing++;
+    }
+  }
+
+  setProgress(100);
+  const missingNote = missing > 0 ? ` (${missing} not yet geocoded)` : '';
+  setStatus(`${placed} of ${rows.length} resources mapped${missingNote}`, '');
+
+  if (allMarkers.length > 0) {
+    const group = L.featureGroup(allMarkers.map(m => m.marker));
+    map.fitBounds(group.getBounds().pad(0.1));
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>
