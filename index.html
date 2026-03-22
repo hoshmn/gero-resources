@@ -27,9 +27,9 @@
     border-bottom: 1px solid var(--border);
     box-shadow: var(--shadow); z-index: 1000; gap: 16px;
   }
-  .header-left { display: flex; align-items: center; gap: 14px; }
+  .header-left { display: flex; align-items: center; gap: 0px; }
   .logo { font-family: 'DM Serif Display', serif; font-size: 1.4rem; color: var(--accent); letter-spacing: -0.02em; }
-  .status { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  .status { font-size: 0.75rem; color: var(--muted); white-space: nowrap; margin-left: 12px; }
   .status.loading { color: var(--accent2); }
   .status.error { color: #c0392b; }
 
@@ -40,6 +40,9 @@
     font-size: 0.6rem; font-weight: 700; cursor: default;
     position: relative; flex-shrink: 0; line-height: 1;
     vertical-align: middle; margin-left: 5px;
+  }
+  .info-icon hr {
+    opacity: 0.2;
   }
   .info-icon .info-tooltip {
     display: none;
@@ -189,17 +192,23 @@
 <header>
   <div class="header-left">
     <span class="logo">Geropsych Resource Map</span>
-    <span class="status" id="status">Loading…</span><span class="info-icon">i<span class="info-tooltip">When resources are
-        added to the spreadsheet, an App Script runs to find the resource location based on its name, adding lat/lng values.
-        If a location isn't found, the lat/lng will be based on the city &amp; state. If the location is incorrect, these
-        values can be manually corrected on the spreadsheet (scroll all the way to the right to find them).</span></span>
+    <div class="info-icon">i<span class="info-tooltip">
+        <div id="count-loaded"></div><br />
+        <hr /><br /> When resources are
+        added to the spreadsheet, an App Script runs with a geocoder to find the resource location and add lat/lng values
+        based on its name, city, county, and state. Rows missing these details may appear in the wrong location on the map
+        or not at all.
+        The lat/lng values can be manually corrected on the spreadsheet (scroll all the way to the right to find them).
+      </span>
+    </div>
+    <span class="status" id="status">Loading…</span>
   </div>
   <div class="controls">
     <span class="resource-control-label">Resources List</span>
     <div class="panel-toggle">
       <button id="pt-auto" class="active" onclick="setPanelMode('auto')">auto</button>
-      <button id="pt-visible" onclick="setPanelMode('visible')">visible</button>
-      <button id="pt-hidden" onclick="setPanelMode('hidden')">hidden</button>
+      <button id="pt-visible" onclick="setPanelMode('visible')">show</button>
+      <button id="pt-hidden" onclick="setPanelMode('hidden')">hide</button>
     </div>
     <input type="text" id="search" placeholder="Search resources…">
     <!-- <button class="btn-refresh" onclick="loadData()">↺ Refresh</button> -->
@@ -462,7 +471,9 @@ async function loadData() {
 
   setProgress(100);
   // const missingNote = missing > 0 ? ` (${missing} not yet geocoded)` : '';
-  setStatus(`${placed} of ${rows.length} resources mapped`, '');
+  setStatus('');
+  const el = document.getElementById('count-loaded');
+  el.textContent = `${placed} of ${rows.length} resources mapped`;
 
   if (allMarkers.length > 0) {
     const group = L.featureGroup(allMarkers.map(m => m.marker));
