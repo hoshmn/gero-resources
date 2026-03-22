@@ -185,6 +185,13 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .resource-control-label { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+
+  .map-style-select {
+    border: 1.5px solid var(--border); border-radius: 8px; padding: 4px 8px;
+    font-family: inherit; font-size: 0.78rem; background: var(--bg); color: var(--muted);
+    outline: none; cursor: pointer;
+  }
+  .map-style-select:focus { border-color: var(--accent2); }
 </style>
 </head>
 <body>
@@ -210,6 +217,11 @@
       <button id="pt-visible" onclick="setPanelMode('visible')">show</button>
       <button id="pt-hidden" onclick="setPanelMode('hidden')">hide</button>
     </div>
+    <!-- <select class="map-style-select" id="map-style" onchange="setMapStyle(this.value)">
+      <option value="minimal">Minimal</option>
+      <option value="bw">B&amp;W</option>
+      <option value="dark">Dark</option>
+    </select> -->
     <input type="text" id="search" placeholder="Search resources…">
     <!-- <button class="btn-refresh" onclick="loadData()">↺ Refresh</button> -->
   </div>
@@ -246,11 +258,36 @@ const sheet_id = '1SbmY2A8dRRxS6HFoWJ63JI5Hrdsae5RyC81sZVBL0vI';
 // const APPS_SCRIPT_URL_TEST = 'https://script.google.com/macros/s/AKfycbwpo2JWleSpPlyn1pFJq2hcM8NeSPy7ya7fYsYsAzIaLvgh8tsDFQF9xVlURXonjhGTMA/exec';
 // ──────────────────────────────────────────────────────────────────────────────
 
-const map = L.map('map').setView([38.5, -96], 4);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a>',
-  maxZoom: 19
-}).addTo(map);
+let loadFromHash = false;
+
+function getHashView() {
+  const m = location.hash.match(/^#(\d+)\/([-\d.]+)\/([-\d.]+)$/);
+  loadFromHash = !!m;
+  return m ? { zoom: +m[1], lat: +m[2], lng: +m[3] } : null;
+}
+
+const initView = getHashView() || { zoom: 4, lat: 38.5, lng: -96 };
+const map = L.map('map', { zoomSnap: 0.5 }).setView([initView.lat, initView.lng], initView.zoom);
+
+map.on('moveend', () => {
+  const c = map.getCenter();
+  location.replace(`#${map.getZoom()}/${c.lat.toFixed(4)}/${c.lng.toFixed(4)}`);
+});
+
+const MAP_STYLES = {
+  minimal: { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',        filter: '' },
+  bw:      { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',        filter: 'grayscale(1)' },
+  dark:    { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',         filter: '' },
+};
+const CARTO_ATTR = '© <a href="https://openstreetmap.org/copyright">OpenStreetMap</a> © <a href="https://carto.com/">CARTO</a>';
+
+let tileLayer = L.tileLayer(MAP_STYLES.minimal.url, { attribution: CARTO_ATTR, maxZoom: 19 }).addTo(map);
+
+function setMapStyle(key) {
+  const style = MAP_STYLES[key] || MAP_STYLES.minimal;
+  tileLayer.setUrl(style.url);
+  document.querySelector('.leaflet-tile-pane').style.filter = style.filter;
+}
 
 let allMarkers = [];
 let markerLayer = L.layerGroup().addTo(map);
@@ -263,11 +300,11 @@ const PIN_COLORS = [
   '#ff006e', // hot pink
   '#fb5607', // vivid orange
   '#8338ec', // purple
-  // '#06d6a0', // mint
+  '#06d6a0', // mint
   '#ffbe0b', // golden yellow
   '#00b4d8', // sky blue
-  // '#6a994e', // muted sage green
-  // '#457b9d', // muted steel blue
+  '#6a994e', // muted sage green
+  '#457b9d', // muted steel blue
 ];
 
 function getLoc(row) {
@@ -416,6 +453,7 @@ function placeMarker(row, coords) {
   marker.bindTooltip(`<strong>${name}</strong>${loc ? `<br>${loc}` : ''}`, { direction: 'top', offset: tooltipOffset });
   marker.on('click', () => {
     console.log('Marker clicked:', row);
+    marker.closeTooltip();
   });
   markerLayer.addLayer(marker);
   allMarkers.push({ marker, row });
@@ -477,7 +515,7 @@ async function loadData() {
 
   if (allMarkers.length > 0) {
     const group = L.featureGroup(allMarkers.map(m => m.marker));
-    map.fitBounds(group.getBounds().pad(0.1));
+    if (!loadFromHash) map.fitBounds(group.getBounds().pad(0.1));
   }
 }
 
