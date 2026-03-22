@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Resource Map</title>
+<title>Geropsych Resource Map</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -32,6 +32,32 @@
   .status { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
   .status.loading { color: var(--accent2); }
   .status.error { color: #c0392b; }
+
+  .info-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; border-radius: 50%;
+    border: 1.5px solid var(--muted); color: var(--muted);
+    font-size: 0.6rem; font-weight: 700; cursor: default;
+    position: relative; flex-shrink: 0; line-height: 1;
+    vertical-align: middle; margin-left: 5px;
+  }
+  .info-icon .info-tooltip {
+    display: none;
+    position: absolute; left: 50%; top: calc(100% + 8px);
+    transform: translateX(-50%);
+    background: var(--text); color: #fff;
+    font-size: 0.75rem; font-weight: 400; line-height: 1.5;
+    padding: 9px 12px; border-radius: 8px;
+    width: 280px; white-space: normal; z-index: 9999;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    pointer-events: none;
+  }
+  .info-icon .info-tooltip::after {
+    content: ''; position: absolute; bottom: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent; border-bottom-color: var(--text);
+  }
+  .info-icon:hover .info-tooltip { display: block; }
 
   .controls { display: flex; gap: 10px; align-items: center; }
   input[type="text"] {
@@ -94,18 +120,89 @@
   .legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
   .dot-precise { background: var(--accent); }
   .dot-fallback { background: #b08a4e; }
+
+  .map-wrap { flex: 1; position: relative; display: flex; overflow: hidden; }
+  #map { flex: 1; }
+
+  .side-panel {
+    position: absolute; right: 0; top: 0; bottom: 0;
+    width: 280px; background: var(--panel);
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 20px rgba(0,0,0,0.07);
+    display: flex; flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 800;
+  }
+  .side-panel.visible { transform: translateX(0); }
+
+  .side-panel-header {
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .side-panel-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1rem; color: var(--accent);
+  }
+  .side-panel-count {
+    font-size: 0.72rem; color: var(--muted); margin-top: 2px;
+  }
+  .panel-toggle {
+    display: flex; gap: 0;
+    border: 1.5px solid var(--border); border-radius: 7px; overflow: hidden;
+    width: fit-content;
+  }
+  .panel-toggle button {
+    background: none; border: none; padding: 4px 10px;
+    font-family: inherit; font-size: 0.72rem; color: var(--muted);
+    cursor: pointer; transition: background 0.15s, color 0.15s;
+    border-right: 1px solid var(--border);
+  }
+  .panel-toggle button:last-child { border-right: none; }
+  .panel-toggle button.active {
+    background: var(--accent); color: white;
+  }
+  .side-panel-list {
+    overflow-y: auto; flex: 1; padding: 8px 0;
+  }
+  .side-panel-item {
+    padding: 10px 16px; cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+  }
+  .side-panel-item:last-child { border-bottom: none; }
+  .side-panel-item:hover { background: var(--bg); }
+  .side-panel-item-name {
+    font-size: 0.85rem; font-weight: 500; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .side-panel-item-loc {
+    font-size: 0.75rem; color: var(--muted); margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .resource-control-label { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
 </style>
 </head>
 <body>
 
 <header>
   <div class="header-left">
-    <span class="logo">Resource Map</span>
-    <span class="status" id="status">Loading…</span>
+    <span class="logo">Geropsych Resource Map</span>
+    <span class="status" id="status">Loading…</span><span class="info-icon">i<span class="info-tooltip">When resources are
+        added to the spreadsheet, an App Script runs to find the resource location based on its name, adding lat/lng values.
+        If a location isn't found, the lat/lng will be based on the city &amp; state. If the location is incorrect, these
+        values can be manually corrected on the spreadsheet (scroll all the way to the right).</span></span>
   </div>
   <div class="controls">
+    <span class="resource-control-label">Resources List</span>
+    <div class="panel-toggle">
+      <button id="pt-auto" class="active" onclick="setPanelMode('auto')">auto</button>
+      <button id="pt-visible" onclick="setPanelMode('visible')">visible</button>
+      <button id="pt-hidden" onclick="setPanelMode('hidden')">hidden</button>
+    </div>
     <input type="text" id="search" placeholder="Search resources…">
-    <button class="btn-refresh" onclick="loadData()">↺ Refresh</button>
+    <!-- <button class="btn-refresh" onclick="loadData()">↺ Refresh</button> -->
   </div>
 </header>
 
@@ -113,19 +210,31 @@
   <div class="progress-fill" id="progress-fill"></div>
 </div>
 
-<div id="map"></div>
+<div class="map-wrap">
+  <div id="map"></div>
+  <div class="side-panel" id="side-panel">
+    <div class="side-panel-header">
+      <div class="side-panel-title">Resources in this area</div>
+      <div class="side-panel-count" id="side-panel-count"></div>
+    </div>
+    <div class="side-panel-list" id="side-panel-list"></div>
+  </div>
+</div>
 
-<div class="legend">
+<!-- <div class="legend">
   <div class="legend-title">Marker type</div>
   <div class="legend-item"><div class="legend-dot dot-precise"></div> Geocoded location</div>
   <div class="legend-item"><div class="legend-dot dot-fallback"></div> City/county fallback</div>
-</div>
+</div> -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 // ── CONFIGURATION ──────────────────────────────────────────────────────────────
+
+const sheet_id = '1SbmY2A8dRRxS6HFoWJ63JI5Hrdsae5RyC81sZVBL0vI';
 // Paste your Google Apps Script Web App URL here after deploying:
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwpo2JWleSpPlyn1pFJq2hcM8NeSPy7ya7fYsYsAzIaLvgh8tsDFQF9xVlURXonjhGTMA/exec';
+// const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyWFYFzwZ6eyQ76vGxgeqdAVlxV4s30RxX9Dlmp4NvufeEDN2F8unxDlX1kr4I1IbXmmA/exec';
+// const APPS_SCRIPT_URL_TEST = 'https://script.google.com/macros/s/AKfycbwpo2JWleSpPlyn1pFJq2hcM8NeSPy7ya7fYsYsAzIaLvgh8tsDFQF9xVlURXonjhGTMA/exec';
 // ──────────────────────────────────────────────────────────────────────────────
 
 const map = L.map('map').setView([38.5, -96], 4);
@@ -136,28 +245,54 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 let allMarkers = [];
 let markerLayer = L.layerGroup().addTo(map);
+let coordMap = {};
+let pinColorIndex = 0;
 
-function makeIcon(type) {
-  const color = type === 'precise' ? '#2d6a4f' : '#b08a4e';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="32" viewBox="0 0 24 32">
-    <path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 20 12 20S24 21 24 12C24 5.4 18.6 0 12 0z" fill="${color}"/>
-    <circle cx="12" cy="12" r="5" fill="white"/>
+const PIN_COLORS = [
+  '#e63946', // red
+  '#3a86ff', // bright blue
+  '#ff006e', // hot pink
+  '#fb5607', // vivid orange
+  '#8338ec', // purple
+  // '#06d6a0', // mint
+  '#ffbe0b', // golden yellow
+  '#00b4d8', // sky blue
+  // '#6a994e', // muted sage green
+  '#457b9d', // muted steel blue
+];
+
+function getLoc(row) {
+  const county = row.county ? (row.county.includes('County') ? row.county : row.county + ' County') : '';
+  const parts = [row.city, county, row.state].filter(Boolean);
+  return parts.length > 0 ? parts.join(', ') : '';
+}
+
+function makeIcon(type, angle = 0, colorIndex = 0) {
+  const headColor = PIN_COLORS[colorIndex % PIN_COLORS.length];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="38" viewBox="0 0 12 38"
+    style="transform-origin: 6px 38px; transform: rotate(${angle}deg); display: block;">
+    <circle cx="6" cy="6" r="6" fill="${headColor}"/>
+    <rect x="5.25" y="11" width="1.5" height="23" fill="#c0c0cc"/>
+    <polygon points="5,34 7,34 6,38" fill="#a8a8b8"/>
+    <circle cx="6" cy="6" r="2.5" fill="white" fill-opacity="0.75"/>
   </svg>`;
   return L.divIcon({
-    html: svg, className: '', iconSize: [24,32], iconAnchor: [12,32], popupAnchor: [0,-34]
+    html: svg, className: '', iconSize: [12, 38], iconAnchor: [6, 38], popupAnchor: [0, -40]
   });
 }
 
 
-
+let con = false; 
 // ── POPUP HTML ─────────────────────────────────────────────────────────────────
 function popupHTML(row, isFallback) {
-  const loc = [row.city, row.county ? row.county+' County' : '', row.state].filter(Boolean).join(', ');
+  const loc = getLoc(row);
   return `<div class="popup-inner">
     <div class="popup-name">${row.name || ''}</div>
     ${loc ? `<div class="popup-loc">📍 ${loc}</div>` : ''}
     ${row.description ? `<div class="popup-desc">${row.description}</div>` : ''}
     <div class="popup-contact">
+      ${row.free ? `<span>💲 Is it free? <strong>${row.free}</strong></span>` : ''}
+      ${row.website ? `<span>🌐 <a href="${row.website}" target="_blank">${row.website}</a></span>` : ''}
       ${row.phone ? `<span>📞 <a href="tel:${row.phone}">${row.phone}</a></span>` : ''}
       ${row.email ? `<span>✉️ <a href="mailto:${row.email}">${row.email}</a></span>` : ''}
       ${row.address ? `<span>🏠 ${row.address}</span>` : ''}
@@ -199,7 +334,7 @@ function setProgress(pct) {
 }
 
 async function fetchSheetRows() {
-  const url = `https://docs.google.com/spreadsheets/d/15miVS0_jky4Q4kpnGl5By9s1T-Tv0guQVxSx5YGx9_s/gviz/tq?tqx=out:json&gid=0`;
+  const url = `https://docs.google.com/spreadsheets/d/${sheet_id}/gviz/tq?tqx=out:json&gid=0`;
   const res = await fetch(url);
   const text = await res.text();
   const json = JSON.parse(text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/)[1]);
@@ -224,8 +359,25 @@ async function fetchSheetRows() {
 
 // ── PLACE MARKER ───────────────────────────────────────────────────────────────
 function placeMarker(row, coords) {
-  const marker = L.marker([coords.lat, coords.lng], { icon: makeIcon(coords.type) });
+  const key = `${coords.lat.toFixed(4)},${coords.lng.toFixed(4)}`;
+  const count = coordMap[key] || 0;
+  coordMap[key] = count + 1;
+  let angle = 0;
+  if (count > 0) {
+    const direction = count % 2 === 1 ? 1 : -1; // odd → right, even → left
+    angle = direction * Math.ceil(count / 2) * 17.15;
+  }
+  const marker = L.marker([coords.lat, coords.lng], { icon: makeIcon(coords.type, angle, pinColorIndex++), zIndexOffset: -count * 100 });
+  // if (coords.type === 'precise') return;
   marker.bindPopup(popupHTML(row, coords.type === 'fallback'), { maxWidth: 320 });
+  let loc = [row.city, row.county ? row.county + ' County' : '', row.state].filter(Boolean).join(', ');
+  if (loc.length > 50) loc = loc.slice(0, 46) + '...'; // truncate long locations
+  let name = row.name || '';
+  if (name.length > 50) name = name.slice(0, 46) + '...';
+  const θ = angle * Math.PI / 180;
+  const tooltipOffset = [Math.round(32 * Math.sin(θ)), Math.round(-32 * Math.cos(θ)) - 10];
+  marker.bindTooltip(`<strong>${name}</strong>${loc ? `<br>${loc}` : ''}`, { direction: 'top', offset: tooltipOffset });
+  
   markerLayer.addLayer(marker);
   allMarkers.push({ marker, row });
 }
@@ -234,12 +386,15 @@ function placeMarker(row, coords) {
 async function loadData() {
   markerLayer.clearLayers();
   allMarkers = [];
+  coordMap = {};
+  pinColorIndex = 0;
   setProgress(2);
   setStatus('Fetching sheet…', 'loading');
 
   let rows;
   try {
     rows = await fetchSheetRows();
+    // console.log('Fetched rows:', rows[0]);
   } catch(e) {
     setStatus(`Error: ${e.message}`, 'error');
     setProgress(100);
@@ -249,10 +404,22 @@ async function loadData() {
   setProgress(60);
   let placed = 0, missing = 0;
 
+  const fields = Object.keys(rows[0] || {});
+  const simpleFields = ['phone', 'website', 'free'];
+  const simpleFieldsMap = {};
+  simpleFields.forEach(f => {
+    const field = fields.find(k => k.toLowerCase().includes(f));
+    if (field) simpleFieldsMap[f] = field;
+  });
   for (const row of rows) {
     const lat = parseFloat(row.lat_c);
     const lng = parseFloat(row.lng_c);
     const geoType = (row.geo_type_c || '').trim();
+    simpleFields.forEach(f => {
+      if (simpleFieldsMap[f] && row[simpleFieldsMap[f]]) {
+        row[f] = row[simpleFieldsMap[f]];
+      }
+    });
 
     if (!isNaN(lat) && !isNaN(lng) && geoType !== 'NOT_FOUND') {
       const type = geoType === 'precise' ? 'precise' : 'fallback';
@@ -264,14 +431,62 @@ async function loadData() {
   }
 
   setProgress(100);
-  const missingNote = missing > 0 ? ` (${missing} not yet geocoded)` : '';
-  setStatus(`${placed} of ${rows.length} resources mapped${missingNote}`, '');
+  // const missingNote = missing > 0 ? ` (${missing} not yet geocoded)` : '';
+  setStatus(`${placed} of ${rows.length} resources mapped`, '');
 
   if (allMarkers.length > 0) {
     const group = L.featureGroup(allMarkers.map(m => m.marker));
     map.fitBounds(group.getBounds().pad(0.1));
   }
 }
+
+      // ── SIDE PANEL ─────────────────────────────────────────────────────────────────
+      let panelMode = 'auto';
+
+      function setPanelMode(mode) {
+        panelMode = mode;
+        ['auto', 'visible', 'hidden'].forEach(m => {
+          document.getElementById('pt-' + m).classList.toggle('active', m === mode);
+        });
+        updateSidePanel();
+      }
+
+      function updateSidePanel() {
+        const panel = document.getElementById('side-panel');
+        const list = document.getElementById('side-panel-list');
+        const count = document.getElementById('side-panel-count');
+
+        if (panelMode === 'hidden' || (panelMode === 'auto' && map.getZoom() < 7)) {
+          panel.classList.remove('visible');
+          return;
+        }
+
+        const bounds = map.getBounds();
+        const q = document.getElementById('search').value.toLowerCase();
+
+        const inView = allMarkers.filter(({ marker, row }) => {
+          if (!markerLayer.hasLayer(marker)) return false;
+          return bounds.contains(marker.getLatLng());
+        }).sort((a, b) => (a.row.name || '').localeCompare(b.row.name || ''));
+
+        count.textContent = `${inView.length} resource${inView.length !== 1 ? 's' : ''}`;
+        list.innerHTML = inView.map(({ marker, row }) => {
+          const loc = getLoc(row);
+          return `<div class="side-panel-item" data-lat="${marker.getLatLng().lat}" data-lng="${marker.getLatLng().lng}">
+      <div class="side-panel-item-name">${row.name || ''}</div>
+      ${loc ? `<div class="side-panel-item-loc">${loc}</div>` : ''}
+    </div>`;
+        }).join('');
+
+        list.querySelectorAll('.side-panel-item').forEach((el, i) => {
+          el.addEventListener('click', () => inView[i].marker.openPopup());
+        });
+
+        panel.classList.add('visible');
+      }
+
+      map.on('moveend', updateSidePanel);
+      document.getElementById('search').addEventListener('input', updateSidePanel);
 
 loadData();
 </script>
