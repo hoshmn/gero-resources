@@ -358,10 +358,11 @@
         </p>
       </div>
       <div class="modal-tech-note">
-        <span class="modal-tech-note-label">TECHNICAL NOTE:</span> When resources are added
-        to the spreadsheet, an App Script runs with a geocoder to find the resource location and add lat/lng values based on
-        its name, city, county, and state. Rows missing these details may appear in the wrong location on the map or not at
-        all. The lat/lng values can be manually corrected on the spreadsheet (scroll all the way to the right to find them).
+        <span class="modal-tech-note-label">TECHNICAL NOTE:</span> Every night, a geocoder App Script runs to find the locations
+        of newly added resources. It determines lat/lng values based on
+        the resource's name, city, county, and state. Rows missing these details may appear in the wrong location on the map or
+        not at all. The lat/lng values can also be manually set (or corrected) on the spreadsheet directly; scroll all the way
+        to the right to find them.
         <div id="count-loaded"></div>
       </div>
     </div>
