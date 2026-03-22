@@ -192,7 +192,7 @@
     <span class="status" id="status">Loading…</span><span class="info-icon">i<span class="info-tooltip">When resources are
         added to the spreadsheet, an App Script runs to find the resource location based on its name, adding lat/lng values.
         If a location isn't found, the lat/lng will be based on the city &amp; state. If the location is incorrect, these
-        values can be manually corrected on the spreadsheet (scroll all the way to the right).</span></span>
+        values can be manually corrected on the spreadsheet (scroll all the way to the right to find them).</span></span>
   </div>
   <div class="controls">
     <span class="resource-control-label">Resources List</span>
@@ -258,7 +258,7 @@ const PIN_COLORS = [
   '#ffbe0b', // golden yellow
   '#00b4d8', // sky blue
   // '#6a994e', // muted sage green
-  '#457b9d', // muted steel blue
+  // '#457b9d', // muted steel blue
 ];
 
 function getLoc(row) {
@@ -267,15 +267,16 @@ function getLoc(row) {
   return parts.length > 0 ? parts.join(', ') : '';
 }
 
-function makeIcon(type, angle = 0, colorIndex = 0) {
+function makeIcon(type, angle = 0, colorIndex = 0, isShifted = false) {
   const headColor = PIN_COLORS[colorIndex % PIN_COLORS.length];
+  const shaftColor = isShifted ? '#78788a' : '#c0c0cc';
+  const tipColor   = isShifted ? '#606070' : '#a8a8b8';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="38" viewBox="0 0 12 38"
     style="transform-origin: 6px 38px; transform: rotate(${angle}deg); display: block;">
-    <circle cx="6" cy="6" r="6" fill="${headColor}"/>
-    <rect x="5.25" y="11" width="1.5" height="23" fill="#c0c0cc"/>
-    <polygon points="5,34 7,34 6,38" fill="#a8a8b8"/>
-    <circle cx="6" cy="6" r="2.5" fill="white" fill-opacity="0.75"/>
-  </svg>`;
+    <circle cx="6" cy="6" r="6" stroke="white" stroke-width="0.4" fill="${headColor}"/>
+    <rect x="5.25" y="11" width="1.5" height="23" fill="${shaftColor}"/>
+    <polygon points="5,34 7,34 6,38" fill="${tipColor}"/>
+    </svg>`;
   return L.divIcon({
     html: svg, className: '', iconSize: [12, 38], iconAnchor: [6, 38], popupAnchor: [0, -40]
   });
@@ -284,7 +285,7 @@ function makeIcon(type, angle = 0, colorIndex = 0) {
 
 let con = false; 
 // ── POPUP HTML ─────────────────────────────────────────────────────────────────
-function popupHTML(row, isFallback) {
+function popupHTML(row, coords) {
   const loc = getLoc(row);
   return `<div class="popup-inner">
     <div class="popup-name">${row.name || ''}</div>
@@ -296,9 +297,10 @@ function popupHTML(row, isFallback) {
       ${row.phone ? `<span>📞 <a href="tel:${row.phone}">${row.phone}</a></span>` : ''}
       ${row.email ? `<span>✉️ <a href="mailto:${row.email}">${row.email}</a></span>` : ''}
       ${row.address ? `<span>🏠 ${row.address}</span>` : ''}
-    </div>
-    ${isFallback ? `<div class="popup-fallback-note">⚠ Approximate location (city-level)</div>` : ''}
-  </div>`;
+      </div>
+      ${coords.type === 'fallback' ? `<div class="popup-fallback-note">⚠ Approximate location (city-level)</div>` : ''}
+      </div>`;
+  // ${coords.lat ? `<span>Plotted: ${coords.lat}, ${coords.lng}</span>` : ''}
 }
 
 // ── SEARCH FILTER ─────────────────────────────────────────────────────────────
@@ -339,9 +341,10 @@ async function fetchSheetRows() {
   const text = await res.text();
   const json = JSON.parse(text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\);?\s*$/)[1]);
   const cols = json.table.cols.map(c => c.label.toLowerCase().trim());
-  return json.table.rows.map(r => {
+  return json.table.rows.map((r, idx) => {
     const obj = {};
     cols.forEach((col, i) => { obj[col] = r.c[i] && r.c[i].v != null ? String(r.c[i].v).trim() : ''; });
+    obj._rowNum = idx + 1; // for debugging (approx, empty rows are skipped in the API response)
     return obj;
   }).filter(r => r.name);
 }
@@ -357,19 +360,44 @@ async function fetchSheetRows() {
 //   return data.filter(r => r.name);
 // }
 
+// ── PLACEMENT GROUPS ───────────────────────────────────────────────────────────
+// Each group of 3 shares a lat/lng offset: [vertical, rotated-right, rotated-left]
+// Groups 0: original | 1: up-right | 2: down-left | 3: up-left | 4: down-right
+// After 5 groups (15 pins), cycle back to original with 2x angle, then 3x, etc.
+const BASE_ANGLE = 17.15;
+const COORD_OFFSETS = [
+  [ 0,       0      ],  // original
+  [ 0.0001,  0.0001 ],  // up-right
+  [-0.0001, -0.0001 ],  // down-left
+  [ 0.0001, -0.0001 ],  // up-left
+  [-0.0001,  0.0001 ],  // down-right
+];
+
 // ── PLACE MARKER ───────────────────────────────────────────────────────────────
 function placeMarker(row, coords) {
   const key = `${coords.lat.toFixed(4)},${coords.lng.toFixed(4)}`;
   const count = coordMap[key] || 0;
   coordMap[key] = count + 1;
-  let angle = 0;
-  if (count > 0) {
-    const direction = count % 2 === 1 ? 1 : -1; // odd → right, even → left
-    angle = direction * Math.ceil(count / 2) * 17.15;
-  }
-  const marker = L.marker([coords.lat, coords.lng], { icon: makeIcon(coords.type, angle, pinColorIndex++), zIndexOffset: -count * 100 });
+
+  const posInGroup  = count % 3;                          // 0=vert, 1=right, 2=left
+  const groupIndex  = Math.floor(count / 3);
+  const cycle       = Math.floor(groupIndex / 5);         // angle multiplier round
+  const groupInCycle = groupIndex % 5;                    // which spatial offset
+
+  const [dlat, dlng] = COORD_OFFSETS[groupInCycle];
+  const isShifted = dlat !== 0 || dlng !== 0;
+  const angleMultiplier = cycle + 1;
+
+  const angle = posInGroup === 1 ?  BASE_ANGLE * angleMultiplier
+              : posInGroup === 2 ? -BASE_ANGLE * angleMultiplier
+              : 0;
+
+  const marker = L.marker(
+    [coords.lat + dlat, coords.lng + dlng],
+    { icon: makeIcon(coords.type, angle, pinColorIndex++, isShifted), zIndexOffset: -posInGroup * 100 }
+  );
   // if (coords.type === 'precise') return;
-  marker.bindPopup(popupHTML(row, coords.type === 'fallback'), { maxWidth: 320 });
+  marker.bindPopup(popupHTML(row, coords), { maxWidth: 320 });
   let loc = [row.city, row.county ? row.county + ' County' : '', row.state].filter(Boolean).join(', ');
   if (loc.length > 50) loc = loc.slice(0, 46) + '...'; // truncate long locations
   let name = row.name || '';
@@ -377,7 +405,9 @@ function placeMarker(row, coords) {
   const θ = angle * Math.PI / 180;
   const tooltipOffset = [Math.round(32 * Math.sin(θ)), Math.round(-32 * Math.cos(θ)) - 10];
   marker.bindTooltip(`<strong>${name}</strong>${loc ? `<br>${loc}` : ''}`, { direction: 'top', offset: tooltipOffset });
-  
+  marker.on('click', () => {
+    console.log('Marker clicked:', row);
+  });
   markerLayer.addLayer(marker);
   allMarkers.push({ marker, row });
 }
@@ -394,7 +424,7 @@ async function loadData() {
   let rows;
   try {
     rows = await fetchSheetRows();
-    // console.log('Fetched rows:', rows[0]);
+    console.log('Fetched rows:', rows[0]);
   } catch(e) {
     setStatus(`Error: ${e.message}`, 'error');
     setProgress(100);
