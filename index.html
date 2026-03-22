@@ -403,7 +403,7 @@ const sheet_id = '1SbmY2A8dRRxS6HFoWJ63JI5Hrdsae5RyC81sZVBL0vI';
 let loadFromHash = false;
 
 function getHashView() {
-  const m = location.hash.match(/^#(\d+)\/([-\d.]+)\/([-\d.]+)$/);
+  const m = location.hash.match(/^#([\d.]+)\/([-\d.]+)\/([-\d.]+)$/);
   loadFromHash = !!m;
   return m ? { zoom: +m[1], lat: +m[2], lng: +m[3] } : null;
 }
